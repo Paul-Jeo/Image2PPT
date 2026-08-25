@@ -11,6 +11,11 @@ Use Python 3.10 or later and install the bundled requirements:
 python -m pip install -r <image2ppt-root>/requirements.txt
 ```
 
+Copying or synchronizing the Skill does not install Python packages. Run the
+command above in the Python environment that will execute the CLI, then require a
+successful `doctor --json` result before preparing an input. Prefer a dedicated
+environment over modifying the operating system Python.
+
 Required packages are pypdfium2, Pillow, NumPy, Requests, PyYAML, and OpenAI. The
 OpenAI package supports the optional image-generation fallback; OCR uses Requests.
 The builder writes OOXML directly and does not require `python-pptx`.
@@ -38,7 +43,8 @@ image2ppt --help
 - ImageMagick is optional for formula PNG conversion and unusual image formats;
   Pillow is the primary image processor.
 - Formula rendering optionally uses a TeX engine plus `dvisvgm`, `pdf2svg`, or
-  ImageMagick. Missing formula tooling must be reported for formula-bearing pages.
+  ImageMagick. Missing formula tooling is a hard failure for formula-bearing pages
+  unless the user explicitly approves omission of that exact formula.
 
 Ubuntu/Debian example:
 

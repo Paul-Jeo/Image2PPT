@@ -4,6 +4,14 @@ This local contract defines semantic-region routing, measured compound diagrams,
 and protected visual anchors. The local `page_jobs.json` remains the only page
 state, and the page `manifest.json` remains the only build source.
 
+## Contents
+
+- [Two-level routing](#two-level-routing)
+- [Compound diagrams](#compound-diagrams)
+- [Protected visual anchors](#protected-visual-anchors)
+- [Manifest extension](#manifest-extension)
+- [Review gate](#review-gate)
+
 ## Two-level routing
 
 Do not route a whole page object-by-object without first understanding its

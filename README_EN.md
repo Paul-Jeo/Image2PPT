@@ -57,6 +57,7 @@ The figure below compares complete reconstructions of a complex scientific flowc
 
 - One or more ordered PNG/JPG files, or a scanned PDF or image-only PPT/PPTX.
 - Which objects must remain editable, which speaker notes must be preserved, and whether online OCR is allowed.
+- For online image generation or editing, explicit permission to upload the task prompt and required page images, plus either Codex OAuth or an OpenAI Images-compatible service configuration.
 
 ## Outputs
 
@@ -81,9 +82,26 @@ Replace the token placeholder in the matching instruction, then give the whole b
 
 > My PaddleOCR Token is `<PADDLE_OCR_TOKEN>`. Fetch the complete project from `https://github.com/Paul-Jeo/Image2PPT` and install it as `.claude/skills/image2ppt` in the current project. Install the dependencies from `requirements.txt`, copy `config.example.yaml` to `config.yaml` in the same directory, and write the Token only to that file without echoing or committing it. Install any system dependencies reported by `doctor`, then run `doctor --json` and confirm that `config_scope` is `project` and the PaddleOCR Token status is `set`.
 
-### 3. Configuration Notes
+### 3. Manual Configuration and Optional Image Backends
 
 `config.example.yaml` is only a template; the program reads the adjacent `config.yaml`, which Git ignores. Precedence is: environment variables > `IMAGE2PPT_CONFIG_HOME` > project-level `config.yaml` > legacy `~/.image2ppt/config.yaml`.
+
+For manual setup, copy `config.example.yaml` to an adjacent `config.yaml` and fill the PaddleOCR Token:
+
+```yaml
+PADDLE_OCR_TOKEN: "your-token"
+```
+
+Image generation and editing prefer the Agent's built-in image tool; the CLI can also use Codex OAuth. To use a third-party image model, add an OpenAI Images-compatible service configuration to the same `config.yaml`:
+
+```yaml
+OPENAI_API_KEY: "your-api-key"
+OPENAI_BASE_URL: "https://provider.example/v1"
+IMAGE2PPT_IMAGE_BACKEND: "openai-compatible-api"
+IMAGE2PPT_IMAGE_MODEL: "provider-model-id"
+```
+
+`auto` selects `codex-oauth` only when the model ID is GPT Image-compatible and local Codex auth exists; other model IDs use `openai-compatible-api`. Third-party endpoints never receive Codex OAuth credentials, but they do receive the task prompt and required page images.
 
 If the Token is unavailable or network OCR fails, Image2PPT falls back to `builtin-ink`, which measures text regions but does not recognize their contents.
 
@@ -92,6 +110,7 @@ If the Token is unavailable or network OCR fails, Image2PPT falls back to `built
 - Reconstructs existing visual pages; it does not author a new presentation from notes, papers, or outlines.
 - Complex illustrations, photos, and local effects that cannot be measured reliably may remain independent image assets; not every element is guaranteed to become a native shape.
 - Low-resolution sources and missing fonts limit fidelity. Online OCR uploads current task pages to Baidu services, so sensitive material should use offline mode.
+- Online image generation or editing sends the current task prompt and required page images to the selected image service; use offline mode or an approved service for sensitive material.
 
 ## License
 

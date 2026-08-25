@@ -10,15 +10,15 @@ Every `source.png` is judged in three steps, in this order:
 
 The order exists because steps 1-2 decide object sources and step 3 consumes those decisions. Nativizing text and layout first locks in wrong choices: text that belongs to a logo, a UI screenshot, or a to-be-separated asset must not become a native text box, and which text needs clean-base removal depends on the background decision. Define the boundaries between background, foreground, and native structure first; then write the manifest. Submit image jobs serially through `page_request.json.image_backend`; its field contract lives in `manifest-schema.md`, and fallback CLI syntax lives in `cli-helper.md`. Do not parallelize page-local image jobs through a batch interface because concurrent asset-sheet calls make rate limits, retries, and reconciliation failures harder to diagnose.
 
-Contents:
+## Contents
 
-- Common failure mode: false progress
-- Pre-decision: page inventory
-- 1. Background recognition and repair
-- 2. Foreground asset separation
-- 3. PPT native element reconstruction
-- Final self-check
-- Fix versus warning
+- [Common Failure Mode: False Progress](#common-failure-mode-false-progress)
+- [Pre-Decision: Page Inventory](#pre-decision-page-inventory)
+- [1. Background Recognition and Repair](#1-background-recognition-and-repair)
+- [2. Foreground Asset Separation](#2-foreground-asset-separation)
+- [3. PPT Native Element Reconstruction](#3-ppt-native-element-reconstruction)
+- [Final Self-Check](#final-self-check)
+- [Fix versus Warning](#fix-versus-warning)
 
 ## Common Failure Mode: False Progress
 
@@ -174,10 +174,12 @@ Record completed calibration with `quality_checks.font_size_calibrated=true`.
 
 ### 3.2 Formula Handling
 
-Transcribe each formula from the source into LaTeX, then render it with `image2ppt formula render-latex` into an image asset written inside the page directory (prefer SVG; use PNG when SVG preview/PowerPoint compatibility is unstable):
+Transcribe each formula from the source into LaTeX, then render it with the local
+CLI into an image asset written inside the page directory (prefer SVG; use PNG
+when SVG preview/PowerPoint compatibility is unstable):
 
 ```bash
-image2ppt formula render-latex <page_dir> \
+python <image2ppt-root>/cli/image2ppt/cli.py formula render-latex <page_dir> \
   --tex "\\sum_{i \\in N} p_{ij} x_{ij} \\ge a_j u_j" \
   --out assets/formula_c2_1.svg \
   --box 105,392,390,90 \
@@ -187,7 +189,12 @@ image2ppt formula render-latex <page_dir> \
 
 Merge the fragment's `images`, `asset_provenance`, and `formula_inventory` into `manifest.json`; the required provenance fields are in `manifest-schema.md`. Never assemble formulas from Unicode subscripts/superscripts or many hand-written text boxes, and never use source-image formula snippets.
 
-If the machine lacks a TeX engine or converter, or compilation fails: still deliver the current openable PPT with `validation.json` keeping top-level `passed: true` and the failure recorded as a warning — formula id, LaTeX source, CLI error, and required tool/package repair. Do not replace the formula with a full-page screenshot.
+If the machine lacks a TeX engine or converter, or compilation fails, keep
+`validation.json.passed=false` and record the formula id, LaTeX source, exact CLI
+error, and required repair. Do not replace the formula with a full-page screenshot.
+Delivery may proceed only when the user explicitly approves omission of that exact
+formula; record `user_approved_exception: true` and a concrete `approval_note` in
+its `formula_inventory` entry.
 
 ### 3.3 Structural Primitives and Layout Objects
 
@@ -237,7 +244,7 @@ The background must not cover text, foreground assets must sit on the right laye
 
 ## Final Self-Check
 
-Whoever rebuilds the page checks it once against this list — deterministic validation is necessary but not sufficient, and the parent agent does not repeat this check. Record the evidence in structured manifest fields and `validation.json`. (Deck-level structural QA at finalize time is in `SKILL.md` Phase 4.)
+Whoever rebuilds the page checks it once against this list — deterministic validation is necessary but not sufficient, and the parent agent does not repeat this check. Record the evidence in structured manifest fields, `validation.json`, and the hash-bound visual-review evidence defined in `qa-contract.md`. Deck-level structural QA follows "Finalize and revalidate the rebuilt deck" in `SKILL.md`.
 
 Structure and artifacts:
 
@@ -279,12 +286,13 @@ Every failed self-check item above is a current-page fix, owned by the page auth
 - The input cannot be normalized.
 - The page lacks a buildable `manifest.json`/`page.pptx`, or the PPTX cannot be opened.
 - Text font size or position visibly deviates from the source and causes crowding, overflow, or occlusion.
+- A formula cannot be rendered and lacks an explicit user-approved exception for
+  that exact formula.
 
 May ship as recorded warnings with the current PPT — but only after the required object-source workflow has succeeded:
 
 - Minor line-width, antialiasing, proportion, shadow, or detail differences in separated assets.
 - Minor visual drift in non-critical decorations.
 - Recorded low-risk font differences.
-- A formula whose LaTeX rendering is blocked by missing local TeX tooling, with the LaTeX source, error, and required repair recorded per 3.2.
 
 Warnings never hide a failure to follow the three-step decision process: an object-source violation is always a current-page fix.

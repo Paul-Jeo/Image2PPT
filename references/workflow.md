@@ -1,5 +1,15 @@
 # Workflow and Run Contract
 
+## Contents
+
+- [Ownership map](#ownership-map)
+- [Authoritative files](#authoritative-files)
+- [Local entrypoint](#local-entrypoint)
+- [Sequence](#sequence)
+- [Lifecycle invariants](#lifecycle-invariants)
+- [Speaker notes and final assembly](#speaker-notes-and-final-assembly)
+- [Retry behavior](#retry-behavior)
+
 ## Ownership map
 
 | Phase | Authoritative local implementation |
@@ -28,6 +38,10 @@ reconstruction-plan packager, or deck assembler.
 - `pages/page_NNN/validation.json`: page record gate; supplemental QA extends it
   in place under `image2ppt_profile`.
 - `pages/page_NNN/page_result.json`: worker return contract.
+
+Every page-owned path resolves inside its page directory; every run/final path
+resolves inside the prepared run. Traversal, absolute escapes, and symlink escapes
+are invalid state, not alternate output locations.
 
 Forbidden parallel state includes `image2ppt_jobs.json`, a second page plan,
 another OCR result schema, an alternate page result, and any second
@@ -59,7 +73,8 @@ local prepare
   -> local run dispatch
   -> worker writes regions and all objects to manifest.json
   -> local page build
-  -> local region inspection + arrow postprocess + page render QA
+  -> local region inspection + arrow postprocess + page render QA template
+  -> source/render inspection + hash-bound structured visual evidence
   -> worker writes page_result.json
   -> local run record
   -> local run finalize
@@ -87,10 +102,13 @@ preserves non-slide package parts.
 6. `run reset` is the only supported transition back to pending after a rejected,
    failed, cancelled, or verified-lost execution.
 7. `run finalize` accepts only fully recorded pages, rebuilds the deck from page
-   manifests in order, validates it, and updates the existing run/deck state.
+   manifests in order, validates it, atomically publishes the final PPTX inside
+   the run, and updates the existing run/deck state.
 
 Supplemental page/final QA may write report files and extend `validation.json`, but
 must never update `page_jobs.json`, `deck_manifest.json`, or `run_state.json`.
+Free-text review notes do not close visual review. The required evidence is bound
+to the current source/render hashes and covers every page and conditional check.
 
 ## Speaker notes and final assembly
 

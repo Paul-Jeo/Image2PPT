@@ -18,6 +18,7 @@ from deck_run_state import (
     load_jobs,
     load_run_state,
     page_dir_for,
+    resolve_inside,
     run_dir_from_target,
 )
 from formula_renderer import (
@@ -69,6 +70,12 @@ def cmd_config(args: argparse.Namespace) -> int:
         argv.append("--clear-base-url")
     if args.model:
         argv.extend(["--model", args.model])
+    if getattr(args, "image_backend", None):
+        argv.extend(["--image-backend", args.image_backend])
+    if getattr(args, "image_user_agent", None):
+        argv.extend(["--image-user-agent", args.image_user_agent])
+    if getattr(args, "clear_image_user_agent", False):
+        argv.append("--clear-image-user-agent")
     if getattr(args, "paddle_ocr_token", None):
         argv.extend(["--paddle-ocr-token", args.paddle_ocr_token])
     return run_script("runtime_env.py", argv)
@@ -312,24 +319,36 @@ def cmd_reset(args: argparse.Namespace) -> int:
 
 def cmd_page_build(args: argparse.Namespace) -> int:
     page_dir = Path(args.page_dir).expanduser().resolve()
+    manifest = page_local_path(page_dir, args.manifest, "manifest")
+    out = page_local_path(page_dir, args.out, "PPTX output")
+    preview = page_local_path(page_dir, args.preview, "preview output")
     return run_script(
         "build_pptx_from_manifest.py",
         [
-            str(page_dir / args.manifest),
+            str(manifest),
             "--out",
-            str(page_dir / args.out),
+            str(out),
             "--preview",
-            str(page_dir / args.preview),
+            str(preview),
         ],
     )
 
 
 def cmd_page_validate(args: argparse.Namespace) -> int:
     page_dir = Path(args.page_dir).expanduser().resolve()
-    argv = [str(page_dir / args.pptx), "--manifest", str(page_dir / args.manifest)]
+    pptx = page_local_path(page_dir, args.pptx, "PPTX input")
+    manifest = page_local_path(page_dir, args.manifest, "manifest")
+    argv = [str(pptx), "--manifest", str(manifest)]
     if args.report:
-        argv.extend(["--report", str(page_dir / args.report)])
+        argv.extend(["--report", str(page_local_path(page_dir, args.report, "validation report"))])
     return run_script("validate_pptx.py", argv)
+
+
+def page_local_path(page_dir: Path, value: str | Path, label: str) -> Path:
+    try:
+        return resolve_inside(page_dir, value)
+    except ValueError as exc:
+        raise SystemExit(f"{label} must stay inside page_dir: {value}") from exc
 
 
 def cmd_finalize(args: argparse.Namespace) -> int:
@@ -337,6 +356,17 @@ def cmd_finalize(args: argparse.Namespace) -> int:
 
 
 def cmd_formula_render_latex(args: argparse.Namespace) -> int:
+    page_dir = Path(args.page_dir).expanduser().resolve() if args.page_dir else None
+    if page_dir:
+        args.out = str(page_local_path(page_dir, args.out, "formula output"))
+        if args.fragment:
+            args.fragment = str(page_local_path(page_dir, args.fragment, "formula fragment"))
+        if args.keep_workdir:
+            args.keep_workdir = str(page_local_path(page_dir, args.keep_workdir, "formula work directory"))
+        if args.tex_file:
+            args.tex_file = str(page_local_path(page_dir, args.tex_file, "formula source"))
+        if args.preamble_file:
+            args.preamble_file = str(page_local_path(page_dir, args.preamble_file, "formula preamble"))
     if args.tex_file:
         tex = Path(args.tex_file).read_text(encoding="utf-8")
     elif args.tex:
@@ -352,7 +382,7 @@ def cmd_formula_render_latex(args: argparse.Namespace) -> int:
         rendered = render_latex_asset(
             tex=tex,
             out=args.out,
-            page_dir=args.page_dir,
+            page_dir=page_dir,
             output_format=args.format,
             engine=args.engine,
             preamble=preamble,
@@ -372,7 +402,7 @@ def cmd_formula_render_latex(args: argparse.Namespace) -> int:
                 image_path=rendered["out"],
                 tex_source=rendered["tex_source"],
                 box_px=args.box,
-                page_dir=args.page_dir,
+                page_dir=page_dir,
                 z_index=args.z_index,
                 alt=args.alt,
             )
@@ -467,14 +497,25 @@ variables still win at runtime. API keys are masked in command output.
         formatter_class=HELP_FORMATTER,
         epilog="""Examples:
   image2ppt config --api-key "your-api-key" --model gpt-image-2
-  image2ppt config --api-key "your-api-key" --base-url https://example.test/v1 --model openai/gpt-image-2
+  image2ppt config --api-key "your-api-key" --image-backend openai-compatible-api --base-url https://example.test/v1 --model provider-image-model
   image2ppt config --clear-base-url
 """,
     )
     config.add_argument("--api-key", help="OpenAI or OpenAI-compatible API key to store.")
     config.add_argument("--base-url", help="OpenAI-compatible base URL, for example https://api.openai.com/v1.")
     config.add_argument("--clear-base-url", action="store_true", help="Remove OPENAI_BASE_URL from the config file.")
-    config.add_argument("--model", help="Default image model for API fallback.")
+    config.add_argument("--model", help="Default provider image model id.")
+    config.add_argument(
+        "--image-backend",
+        choices=["auto", "codex-oauth", "openai-compatible-api"],
+        help="Default transport backend for image generate/edit calls.",
+    )
+    config.add_argument("--image-user-agent", help="Optional User-Agent for the OpenAI-compatible API only.")
+    config.add_argument(
+        "--clear-image-user-agent",
+        action="store_true",
+        help="Remove IMAGE2PPT_IMAGE_USER_AGENT from the config file.",
+    )
     config.add_argument("--paddle-ocr-token", metavar="TOKEN", help="PaddleOCR-VL token for content-aware text hints. Apply at https://aistudio.baidu.com/account/accessToken.")
     config.set_defaults(func=cmd_config)
 
@@ -502,9 +543,12 @@ contract. The standalone CLI default is image2ppt-image-cli.
     prepare.add_argument("--max-concurrent-pages", type=int, metavar="N", help="Maximum concurrent page dispatch slots. Default: 6.")
     prepare.add_argument(
         "--image-backend",
-        choices=["builtin-imagegen", "image2ppt-image-cli"],
+        choices=["builtin-imagegen", "image2ppt-image-cli", "openai-compatible-api"],
         default="image2ppt-image-cli",
-        help="Run-level image backend contract. Defaults to image2ppt-image-cli; parent agents can select builtin-imagegen.",
+        help=(
+            "Run-level image backend contract. Defaults to image2ppt-image-cli; use openai-compatible-api "
+            "to pin a provider-neutral OpenAI Images-compatible transport."
+        ),
     )
     prepare.add_argument("--no-text-hints", action="store_true", help="Skip per-page text hint generation after preparing pages.")
     prepare.set_defaults(func=cmd_prepare)
@@ -745,25 +789,28 @@ comparison image.
         help="Generate/edit images and process image assets.",
         description="""Unified image generation/editing and deterministic image-file handling.
 
-Use generate/edit for Codex OAuth first, with OpenAI-compatible API fallback
-when local Codex auth is unavailable. Use process-sheet for deterministic
-asset-sheet splitting inside page directories.
+Use generate/edit with an explicit or configured transport backend. In auto mode,
+Codex OAuth is selected only for GPT Image model ids; provider-specific model ids
+use the OpenAI Images-compatible API. Use process-sheet for deterministic asset-
+sheet splitting inside page directories.
 """,
         formatter_class=HELP_FORMATTER,
         epilog="""Backend selection:
-  Codex OAuth uses ~/.codex/auth.json or CODEX_AUTH_FILE.
-  API fallback uses the active config.yaml or OPENAI_API_KEY, OPENAI_BASE_URL,
-  and IMAGE2PPT_IMAGE_MODEL. Third-party endpoints never receive Codex OAuth credentials.
+  auto uses Codex OAuth only for GPT Image model ids with compatible auth.
+  codex-oauth explicitly uses ~/.codex/auth.json or CODEX_AUTH_FILE.
+  openai-compatible-api explicitly uses the active config.yaml or OPENAI_API_KEY,
+  OPENAI_BASE_URL, and IMAGE2PPT_IMAGE_MODEL. Third-party endpoints never receive
+  Codex OAuth credentials.
 
 Setup:
   codex login
-  image2ppt config --api-key "your-api-key" --model gpt-image-2
-  image2ppt config --api-key "your-api-key" --base-url https://example.test/v1 --model openai/gpt-image-2
+  image2ppt config --api-key "your-api-key" --image-backend openai-compatible-api --base-url https://example.test/v1 --model provider-image-model
 
 Parameter surface:
-  generate/edit backend requests pass only model, prompt, size, and quality.
-  edit also passes input images and an optional mask. Local controls such as
-  --out, --force, --dry-run, and --timeout are not image API parameters.
+  generate/edit backend requests always pass model and prompt. Explicit non-auto
+  size and quality values are forwarded unchanged. edit also passes input images
+  and an optional mask. Local controls such as --backend, --out, --force,
+  --dry-run, and --timeout are not image API parameters.
 
 Patterns:
   image2ppt image edit --image pages/page_001/source.png --prompt-file clean-base.prompt.txt --out pages/page_001/assets/clean-base.png

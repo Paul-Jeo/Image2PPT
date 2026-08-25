@@ -6,7 +6,22 @@ Usage principles:
 
 - If a deterministic action can be completed with `image2ppt`, call the CLI directly instead of rewriting it as a temporary Python script.
 - When full CLI parameters are needed, read `image2ppt <command> --help` or `image2ppt image <command> --help` first.
-- In network-restricted agents, `image2ppt prepare`/`image2ppt run hints` with a PaddleOCR token and CLI fallback `image2ppt image generate/edit` calls need network approval. The approval and user-interaction policy lives in `SKILL.md` Entry Contract and Phase 1.
+- In network-restricted agents, `image2ppt prepare`/`image2ppt run hints` with a PaddleOCR token and CLI fallback `image2ppt image generate/edit` calls need network approval. The approval and user-interaction policy lives under "Preflight and OCR choice" and "Image backend selection" in `SKILL.md`.
+- Every page command confines manifest paths, assets, reports, and output overrides
+  to the supplied page directory. Run/final commands confine outputs to the run.
+
+## Contents
+
+- [Command Tree](#command-tree)
+- [Common Help Entrypoints](#common-help-entrypoints)
+- [Skill Script Commands](#skill-script-commands)
+- [Pre-Run Check](#pre-run-check)
+- [Run Commands](#run-commands)
+- [Page Build Commands](#page-build-commands)
+- [Text Measurement Commands](#text-measurement-commands)
+- [Image Backend Commands](#image-backend-commands)
+- [Asset Processing Commands](#asset-processing-commands)
+- [Formula Commands](#formula-commands)
 
 ## Command Tree
 
@@ -50,9 +65,15 @@ image2ppt image edit --help
 image2ppt formula render-latex --help
 ```
 
-`image2ppt image` is the CLI fallback layer. Within that layer it automatically chooses Codex OAuth first, then OpenAI-compatible API credentials from the active `config.yaml` or environment variables if OAuth is unavailable. See `manifest-schema.md` for the run/page backend field contract. `image2ppt doctor` checks CLI backend readiness; it cannot discover whether an agent runtime exposes the built-in tool.
+`image2ppt image` is the CLI fallback layer. `--backend` (or `IMAGE2PPT_IMAGE_BACKEND`) selects `auto`, `codex-oauth`, or `openai-compatible-api`. `auto` uses Codex OAuth only for compatible GPT Image model ids; provider-specific model ids use the configured OpenAI Images-compatible API even when local Codex auth exists. See `manifest-schema.md` for the run/page backend field contract. `image2ppt doctor` checks CLI backend readiness; it cannot discover whether an agent runtime exposes the built-in tool.
 
-Public `image2ppt image generate/edit` parameters are intentionally narrow. Required request inputs are `--prompt` or `--prompt-file`, plus at least one `--image` for `edit`. CLI fallback calls should pass an explicit `--out`. Retained useful controls are `--model` (default `gpt-image-2`), `--size` (default `auto`), `--quality` (default `auto`), `--force`, `--dry-run`, `--timeout`, and edit-only `--mask`. The CLI does not pass any other image API options.
+Public `image2ppt image generate/edit` parameters are intentionally narrow. Required request inputs are `--prompt` or `--prompt-file`, plus at least one `--image` for `edit`. CLI fallback calls should pass an explicit `--out`. Retained useful controls are `--backend`, `--model` (default `gpt-image-2`), `--size` (default `auto`), `--quality` (default `auto`), `--force`, `--dry-run`, `--timeout`, and edit-only `--mask`. `auto` size/quality values are omitted on the API path so the provider chooses its defaults; explicit values pass through. The CLI does not pass any other image API options.
+
+`prepare --image-backend openai-compatible-api` is the provider-neutral pinned
+run contract. Its model metadata is resolved from the active
+`IMAGE2PPT_IMAGE_MODEL` configuration/environment unless `run backend --model`
+explicitly overrides it; preparing a third-party run must not silently record a
+GPT Image model id.
 
 ## Skill Script Commands
 
@@ -96,7 +117,7 @@ After the CLI is available, run local runtime checks:
 ```bash
 image2ppt setup
 image2ppt doctor
-image2ppt config --api-key "<key>" --base-url "<openai-compatible-base-url>" --model "<image-model>"
+image2ppt config --api-key "<key>" --image-backend openai-compatible-api --base-url "<openai-images-compatible-base-url>" --model "<provider-image-model>"
 ```
 
 Write `image2ppt config` only when API fallback is needed or when the user explicitly provides a third-party image API. Do not write API keys into the project directory, run directory, prompts, or manifests.
@@ -107,7 +128,7 @@ Optional but recommended on first use: configure a PaddleOCR-VL token. The offli
 image2ppt config --paddle-ocr-token "<token>"
 ```
 
-`image2ppt doctor` reports the current text-hints backend; without a token everything still works through the built-in offline detector. When and how to ask the user about the token — including the application URL and the regenerate step — is defined in `SKILL.md` Phase 1.
+`image2ppt doctor` reports the current text-hints backend; without a token everything still works through the built-in offline detector. When and how to ask the user about the token — including the application URL and the regenerate step — is defined under "Preflight and OCR choice" in `SKILL.md`.
 
 ## Run Commands
 
@@ -117,9 +138,9 @@ image2ppt prepare input.pdf
 image2ppt prepare input.png --image-backend builtin-imagegen
 ```
 
-Purpose: normalize a single image, multiple images, a PDF, or an image-based PPTX into a run directory and generate `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, plus per-page `pages/page_NNN/source.png`, `page_request.json`, and text hints. `--image-backend` records the requested run/page contract; selection policy lives in `SKILL.md` subsection "Image Backend Selection".
+Purpose: normalize a single image, multiple images, a PDF, or an image-based PPTX into a run directory and generate `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, plus per-page `pages/page_NNN/source.png`, `page_request.json`, and text hints. `--image-backend` records the requested run/page contract; selection policy lives under "Image backend selection" in `SKILL.md`.
 
-When a PaddleOCR token is configured, `prepare` may submit the input pages to PaddleOCR for content-aware text hints. In a sandboxed or approval-gated environment, request network approval up front for this command instead of accepting a DNS/sandbox failure followed by lower-quality `builtin-ink` fallback; see `SKILL.md` Phase 1 for the approval-rejection policy.
+When a PaddleOCR token is configured, `prepare` may submit the input pages to PaddleOCR for content-aware text hints. In a sandboxed or approval-gated environment, request network approval up front for this command instead of accepting a DNS/sandbox failure followed by lower-quality `builtin-ink` fallback; see "Preflight and OCR choice" in `SKILL.md` for the approval-rejection policy.
 
 ```bash
 image2ppt run next <run> --json
@@ -155,7 +176,7 @@ Purpose: after the page reconstructor writes its required outputs (see `manifest
 image2ppt run reset <run> --page page_001 --agent-id <worker-id> --confirm-lost
 ```
 
-Purpose: return a dispatched or recorded page to `pending`, clearing its dispatch and result records, so a new worker can be dispatched. Recorded pages can be reset with only `--page`. Dispatched pages require `--agent-id` plus `--confirm-lost`, and the id must match the recorded dispatch. Use this only when a worker returned a failed page, `run record` rejected the outputs, the runtime reports a terminal worker state, the user cancels that worker, or repeated reachability checks prove the worker is lost. The failure-handling policy is in `SKILL.md` Phase 3.
+Purpose: return a dispatched or recorded page to `pending`, clearing its dispatch and result records, so a new worker can be dispatched. Recorded pages can be reset with only `--page`. Dispatched pages require `--agent-id` plus `--confirm-lost`, and the id must match the recorded dispatch. Use this only when a worker returned a failed page, `run record` rejected the outputs, the runtime reports a terminal worker state, the user cancels that worker, or repeated reachability checks prove the worker is lost. The failure-handling policy is under "Advance and claim pages" and "Reconstruct and gate each page" in `SKILL.md`.
 
 ```bash
 image2ppt run finalize <run>
@@ -171,7 +192,7 @@ These are the worker-side commands for turning a finished `manifest.json` into t
 image2ppt page build pages/page_001
 ```
 
-Purpose: build `page.pptx` and render `preview.png` from `manifest.json` with the deterministic runtime. Optional `--manifest/--out/--preview` override the default file names inside the page directory.
+Purpose: build `page.pptx` and render `preview.png` from `manifest.json` with the deterministic runtime. Optional `--manifest/--out/--preview` override the default file names but must still resolve inside the page directory. The PPTX is staged beside the requested output and atomically published only after a successful build.
 
 ```bash
 image2ppt page contact-sheet pages/page_001
@@ -193,7 +214,7 @@ image2ppt run hints <run>
 
 Purpose: regenerate `text_hints.json`/`text_hints.png` for every page of a prepared run — for example right after configuring a PaddleOCR token, so the current run gets content-aware hints without re-running prepare.
 
-When used with a configured PaddleOCR token, this command calls the external OCR service. If the runtime requires approval for network access, request it with the task-local conversion-data justification from `SKILL.md`; see `SKILL.md` Phase 1 for the approval-rejection policy.
+When used with a configured PaddleOCR token, this command calls the external OCR service. If the runtime requires approval for network access, request it with the task-local conversion-data justification from `SKILL.md`; see "Preflight and OCR choice" for the approval-rejection policy.
 
 ```bash
 image2ppt page hints pages/page_001
@@ -229,7 +250,7 @@ image2ppt image edit \
 
 When multiple fallback image outputs are required, run `image2ppt image generate` or `image2ppt image edit` calls serially. For foreground icons and small visual objects, prefer one sparse asset sheet with generous spacing; create a second sheet only when one sheet cannot fit the required objects cleanly.
 
-These commands select Codex OAuth first, then a configured OpenAI-compatible API fallback. In a network-restricted runtime, request approval before the call and state that only task-local prompts plus required page images/masks/references are uploaded for the current conversion.
+These commands follow the explicit/configured backend. In `auto`, they use Codex OAuth only for compatible GPT Image ids and otherwise use the configured OpenAI Images-compatible API. The API path accepts arbitrary provider model ids; compatibility is defined by the `/images/generations` and `/images/edits` request/response protocol, not by a provider-name allowlist. In a network-restricted runtime, request approval before the call and state that only task-local prompts plus required page images/masks/references are uploaded for the current conversion.
 
 ## Asset Processing Commands
 
@@ -241,10 +262,11 @@ image2ppt image import pages/page_001 \
   --source-image /tmp/generated.png \
   --dest assets/icon-sheet.png \
   --role asset_sheet \
-  --backend builtin-imagegen
+  --backend openai-compatible-api \
+  --model provider-image-model
 ```
 
-`--source-image` must be an existing, readable local image. `--backend` records the actual producer and is required; `--fallback-reason` is accepted only when it is consistent with the page's backend contract. Field values and provenance rules live in `manifest-schema.md`.
+`--source-image` must be an existing, readable local image. `--backend` records the actual producer and is required; pass `--model` whenever the provider model id is known. `--fallback-reason` is accepted only when it is consistent with the page's backend contract. Field values and provenance rules live in `manifest-schema.md`.
 
 Process a chroma-key asset sheet:
 

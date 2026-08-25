@@ -56,6 +56,7 @@
 ## 你需要提供
 
 - 一张或多张按顺序排列的 PNG/JPG，或扫描 PDF、图片型 PPT/PPTX。
+- 如需在线生成或编辑图片资产，需明确允许上传当前任务的提示词和必要页面图片，并提供 Codex OAuth 或兼容 OpenAI Images API 的服务配置。
 
 ## 产出
 
@@ -80,9 +81,26 @@
 
 > 我的 PaddleOCR Token 是 `<PADDLE_OCR_TOKEN>`。请从 `https://github.com/Paul-Jeo/Image2PPT` 将完整项目安装为当前项目的 `.claude/skills/image2ppt` Skill。安装 `requirements.txt` 中的依赖，将 `config.example.yaml` 复制为同目录的 `config.yaml`，仅把 Token 写入该文件，不要回显或提交。补齐 `doctor` 报告的系统依赖，最后运行 `doctor --json`，确认 `config_scope` 为 `project`、PaddleOCR Token 状态为 `set`。
 
-### 3. 配置说明
+### 3. 手动配置与可选图片后端
 
 `config.example.yaml` 只是模板，程序实际读取同目录的 `config.yaml`；后者已被 Git 忽略。读取优先级为：环境变量 > `IMAGE2PPT_CONFIG_HOME` > 项目级 `config.yaml` > 旧版 `~/.image2ppt/config.yaml`。
+
+手动配置时，将 `config.example.yaml` 复制为同目录的 `config.yaml`，填写 PaddleOCR Token：
+
+```yaml
+PADDLE_OCR_TOKEN: "你的 Token"
+```
+
+图片生成和编辑优先使用 Agent 内置图像工具；CLI 也可以使用 Codex OAuth。若要改用第三方图片模型，在同一 `config.yaml` 中填写兼容 OpenAI Images API 的服务配置：
+
+```yaml
+OPENAI_API_KEY: "你的 API Key"
+OPENAI_BASE_URL: "https://服务地址/v1"
+IMAGE2PPT_IMAGE_BACKEND: "openai-compatible-api"
+IMAGE2PPT_IMAGE_MODEL: "供应商提供的模型 ID"
+```
+
+`auto` 仅在模型 ID 兼容 GPT Image 且本地已有 Codex 登录时选择 `codex-oauth`；其他模型 ID 使用 `openai-compatible-api`。第三方端点不会收到 Codex OAuth 凭证，但会收到当前任务的提示词和必要页面图片。
 
 未配置 Token 或网络 OCR 失败时，程序会回退到 `builtin-ink`，只能测量文字区域，不能识别文字内容。
 
@@ -91,6 +109,7 @@
 - 用于还原已有视觉页面，不用于根据笔记、论文或提纲从零创作演示文稿。
 - 复杂插图、照片和无法可靠测量的局部效果可能保留为独立图片资产，不保证所有元素都转换为原生形状。
 - 低分辨率输入和缺失字体会限制还原精度；在线 OCR 会向百度服务上传当前任务页面，敏感材料应使用离线模式。
+- 在线图片生成或编辑会把当前任务的提示词和必要页面图片发送到所选图片服务；敏感材料应选择离线模式或经批准的服务。
 
 ## License
 
